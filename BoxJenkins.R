@@ -79,14 +79,50 @@ grafico_fac_datos <- datos_tbl |> ACF(precio, lag_max = 15) |> ggtime::autoplot(
 grafico_facp_datos <- datos_tbl |> PACF(precio, lag_max = 15) |> ggtime::autoplot() + ggtitle("FACP del precio internacional de la carne") + ylim(-1, 1) + theme_light()
 grilla(grafico_fac_datos, grafico_facp_datos, nrow = 1, ncol = 2)
 
-# --- Tests de Raíz Unitaria ---
+# --- Tests de Raíz Unitaria para la Serie Original ---
 adf_result <- ur.df(datos_serie$precio, type = "drift", selectlags = "AIC")
-cat("=== Test ADF ===\n")
+cat("\n======================================================\n")
+cat("=== TEST ADF PARA LA SERIE ORIGINAL (NIVELES) ===")
+cat("\n======================================================\n")
 print(summary(adf_result))
 
+# ==============================================================================
+# ADF SERIE ORIGINAL
+# ==============================================================================
+adf_stat <- adf_result@teststat[1, "tau2"]
+adf_critico_5 <- adf_result@cval["tau2", "5pct"]
+
+if (adf_stat < adf_critico_5) {
+  cat(sprintf("ADF: El estadístico (%.4f) es MENOR que el valor crítico (%.4f).\n", adf_stat, adf_critico_5))
+  cat("-> RECHAZAMOS H0. La serie original ES ESTACIONARIA en niveles.\n")
+} else {
+  cat(sprintf("ADF: El estadístico (%.4f) es MAYOR que el valor crítico (%.4f).\n", adf_stat, adf_critico_5))
+  cat("-> NO RECHAZAMOS H0. La serie original TIENE RAÍZ UNITARIA (No es estacionaria).\n")
+}
+cat("======================================================\n")
+
+
 kpss_result <- ur.kpss(datos_serie$precio, type = "mu", lags = "short")
-cat("\n=== Test KPSS ===\n")
+cat("\n======================================================\n")
+cat("=== TEST KPSS PARA LA SERIE ORIGINAL (NIVELES) ===")
+cat("\n======================================================\n")
 print(summary(kpss_result))
+
+# ==============================================================================
+# KPSS SERIE ORIGINAL
+# ==============================================================================
+kpss_stat <- kpss_result@teststat[1]
+kpss_critico_5 <- kpss_result@cval["critical values", "5pct"]
+
+if (kpss_stat < kpss_critico_5) {
+  cat(sprintf("KPSS: El estadístico (%.4f) es MENOR que el valor crítico (%.4f).\n", kpss_stat, kpss_critico_5))
+  cat("-> NO RECHAZAMOS H0. Se confirma que la serie original ES ESTACIONARIA en niveles.\n")
+} else {
+  cat(sprintf("KPSS: El estadístico (%.4f) es MAYOR que el valor crítico (%.4f).\n", kpss_stat, kpss_critico_5))
+  cat("-> RECHAZAMOS H0. La serie original NO ES ESTACIONARIA en niveles.\n")
+}
+cat("======================================================\n")
+
 
 # --- Transformaciones Estacionarias ---
 datos_serie <- datos_serie |>
