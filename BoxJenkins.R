@@ -70,13 +70,13 @@ datos_vector <- datos_serie$precio
 # ==============================================================================
 print(
   ggtime::autoplot(datos_tbl, precio) +
-    ggtitle("Precio internacional, 2010-2026") +
+    ggtitle("Precio internacional de la carne, 2010-2026") +
     xlab("Fecha") + ylab("Precio(USD)") + theme_light()
 )
 
 # Análisis de Estacionariedad en la Serie Original
-grafico_fac_datos <- datos_tbl |> ACF(precio, lag_max = 15) |> ggtime::autoplot() + ggtitle("FAC del precio") + ylim(-1, 1) + theme_light()
-grafico_facp_datos <- datos_tbl |> PACF(precio, lag_max = 15) |> ggtime::autoplot() + ggtitle("FACP del precio") + ylim(-1, 1) + theme_light()
+grafico_fac_datos <- datos_tbl |> ACF(precio, lag_max = 15) |> ggtime::autoplot() + ggtitle("FAC del precio internacional de la carne") + ylim(-1, 1) + theme_light()
+grafico_facp_datos <- datos_tbl |> PACF(precio, lag_max = 15) |> ggtime::autoplot() + ggtitle("FACP del precio internacional de la carne") + ylim(-1, 1) + theme_light()
 grilla(grafico_fac_datos, grafico_facp_datos, nrow = 1, ncol = 2)
 
 # --- Tests de Raíz Unitaria ---
@@ -101,7 +101,7 @@ print(
   datos_serie |>
     filter(!is.na(diff_datos)) |>
     ggtime::autoplot(diff_datos) +
-    ggtitle("Serie Diferenciada (Primera Diferencia del Precio)") +
+    ggtitle("Serie Diferenciada (Primera Diferencia del Precio internacional de la carne)") +
     xlab("Fecha") +
     ylab("D(Precio)") + 
     theme_light()
@@ -112,7 +112,7 @@ print(
   datos_serie |>
     filter(!is.na(log_diff)) |>
     ggtime::autoplot(log_diff) +
-    ggtitle("Diferencia del Logaritmo de la Serie de Precios") +
+    ggtitle("Diferencia del Logaritmo de la Serie de Precio internacional de la carne") +
     xlab("Fecha") +
     ylab("D(Log(Precio))") + 
     theme_light()
@@ -130,6 +130,60 @@ grafico_facp_log_diff <- datos_serie |>
   ggtime::autoplot() + ggtitle("FACP de la diferencia del logaritmo") + ylim(-1, 1) + theme_light()
 
 grilla(grafico_fac_log_diff, grafico_facp_log_diff, nrow = 1, ncol = 2)
+
+# Extraer el vector limpio sin valores NA de la diferencia del logaritmo
+log_diff_vector <- datos_serie$log_diff[!is.na(datos_serie$log_diff)]
+
+# Test ADF para la serie diferenciada
+# Usamos type = "none" porque la serie ya no tiene intercepto ni tendencia
+adf_diff_result <- ur.df(
+  log_diff_vector,
+  type = "none",
+  selectlags = "AIC"
+)
+
+cat("\n======================================================\n")
+cat("=== TEST ADF PARA LA SERIE LOG-DIFERENCIADA ===")
+cat("\n======================================================\n")
+print(summary(adf_diff_result))
+
+# Regla de decisión automatizada para el ADF
+adf_diff_stat <- adf_diff_result@teststat[1, "tau1"]
+adf_diff_critico_5 <- adf_diff_result@cval["tau1", "5pct"]
+
+if (adf_diff_stat < adf_diff_critico_5) {
+  cat(sprintf("ADF: El estadístico (%.4f) es MENOR que el valor crítico (%.4f).\n", adf_diff_stat, adf_diff_critico_5))
+  cat("-> RECHAZAMOS H0. La serie log-diferenciada ya ES ESTACIONARIA.\n")
+} else {
+  cat(sprintf("ADF: El estadístico (%.4f) es MAYOR que el valor crítico (%.4f).\n", adf_diff_stat, adf_diff_critico_5))
+  cat("-> NO RECHAZAMOS H0. La serie sigue sin ser estacionaria.\n")
+}
+
+
+# 3. Test KPSS para la serie diferenciada
+kpss_diff_result <- ur.kpss(
+  log_diff_vector,
+  type = "mu",
+  lags = "short"
+)
+
+cat("\n======================================================\n")
+cat("=== TEST KPSS PARA LA SERIE LOG-DIFERENCIADA ===")
+cat("\n======================================================\n")
+print(summary(kpss_diff_result))
+
+# Regla de decisión automatizada para el KPSS
+kpss_diff_stat <- kpss_diff_result@teststat[1]
+kpss_diff_critico_5 <- kpss_diff_result@cval["critical values", "5pct"]
+
+if (kpss_diff_stat < kpss_diff_critico_5) {
+  cat(sprintf("KPSS: El estadístico (%.4f) es MENOR que el valor crítico (%.4f).\n", kpss_diff_stat, kpss_diff_critico_5))
+  cat("-> NO RECHAZAMOS H0. Se confirma que la serie log-diferenciada ES ESTACIONARIA.\n")
+} else {
+  cat(sprintf("KPSS: El estadístico (%.4f) es MAYOR que el valor crítico (%.4f).\n", kpss_diff_stat, kpss_diff_critico_5))
+  cat("-> RECHAZAMOS H0. La serie sigue mostrando indicios de no estacionariedad.\n")
+}
+cat("======================================================\n")
 
 # ==============================================================================
 # PASO 2: Estimación (Selección e Inferencia) =========================
@@ -194,18 +248,27 @@ cat("\n==============================================\n")
 
 # ==============================================================================
 
+# Estimación final en Fable para un ARIMA(1,1,2) sin constante
+# (Recuerda cambiar el pdq(1,1,2) si tras ver la tabla prefieres usar el orden del AIC o BIC)
+fit_modelo_AIC <- datos_serie |>
+  select(fecha, precio) |>
+  model(modelo_optimo = fable::ARIMA(log(precio) ~ 0 + pdq(1, 1, 2) + PDQ(0, 0, 0)))
+
+cat("\n=== Reporte de Estimación Fable ===\n")
+report(fit_modelo_AIC)
+
 # Estimación final en Fable para un ARIMA(0,1,1) sin constante
 # (Recuerda cambiar el pdq(0,1,1) si tras ver la tabla prefieres usar el orden del AIC o BIC)
-fit_modelo <- datos_serie |>
+fit_modelo_BIC <- datos_serie |>
   select(fecha, precio) |>
   model(modelo_optimo = fable::ARIMA(log(precio) ~ 0 + pdq(0, 1, 1) + PDQ(0, 0, 0)))
 
 cat("\n=== Reporte de Estimación Fable ===\n")
-report(fit_modelo)
+report(fit_modelo_BIC)
 # ==============================================================================
 # PASO 3: Validación de supuestos =========================
 # ==============================================================================
-residuales_tbl <- fit_modelo |> residuals() |> filter(!is.na(.resid))
+residuales_tbl <- fit_modelo_BIC |> residuals() |> filter(!is.na(.resid))
 residuales <- residuales_tbl$.resid
 
 # --- Gráficas e Inferencia de Ruido Blanco ---
